@@ -26,6 +26,8 @@ Route::domain('index.laravel.com')->namespace('Index')->group(function () {
     Route::any('logDo',"IndexController@logDo");
     Route::any('wechat',"IndexController@wechat");
     Route::any('huifu',"IndexController@huifu");
+    Route::any('index',"IndexController@index");//扫码登录
+    Route::any('checkWechatLogin',"IndexController@checkWechatLogin");
   
 });
 

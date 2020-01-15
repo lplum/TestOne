@@ -8,6 +8,30 @@ class Tools {
         $this->redis = new \Redis();
         $this->redis->connect('127.0.0.1','6379');
     }
+    public static function responseText($msg,$postObj){
+     echo "<xml>
+            <ToUserName><![CDATA[".$postObj->FromUserName."]]></ToUserName>
+            <FromUserName><![CDATA[".$postObj->ToUserName."]]></FromUserName>
+            <CreateTime><![CDATA[".Time()."]]></CreateTime>
+            <MsgType><![CDATA[text]]></MsgType>
+            <Content><![CDATA[".$msg."]]></Content>
+          </xml>";exit;
+    }
+    
+    /**
+     * 回复图片信息
+     */
+    public static function responseImg($postObj,$MediaId){
+        echo "<xml>
+                <ToUserName><![CDATA[".$postObj->FromUserName."]]></ToUserName>
+                <FromUserName><![CDATA[".$postObj->ToUserName."]]></FromUserName>
+                <CreateTime>".time()."</CreateTime>
+                <MsgType><![CDATA[image]]></MsgType>
+                <Image>
+                <MediaId><![CDATA[".$MediaId."]]></MediaId>
+                </Image>
+            </xml>";exit;
+    }
     public function curl_post($url,$data)
     {
         $curl = curl_init($url);

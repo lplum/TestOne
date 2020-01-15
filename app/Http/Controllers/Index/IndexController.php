@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use App\Model\WechatUserModel;
 use Illuminate\Support\Facades\Redis;
 use Session;
+use Illuminate\Support\Facades\Cache;
 use App\Tools\Tools;
 class IndexController extends Common
 {
@@ -135,125 +136,57 @@ class IndexController extends Common
         // dd($imgUrl);
         return view('index/wechat',['imgUrl'=>$imgUrl]);
     }
+    public function index()
+   {
+      $echostr=request()->echostr;
+      if(!empty($echostr)){
+         echo $echostr;
+      }
+      $xmlData=file_get_contents("php://input");
+      file_put_contents('1.txt',$xmlData);
+      //将xml格式转成xml对象
+      $xmlObj=simplexml_load_string($xmlData,'SimpleXMLElement',LIBXML_NOCDATA);
+      //判断用户未关注过
+      if($xmlObj->MsgType=="event"&&$xmlObj->Event=="subscribe"){
+            //获取openid
+            $openId=(string)$xmlObj->FromUserName;
+            //获取二维码标识
+            $EventKey=(string)$xmlObj->EventKey;
+            $status=ltrim($EventKey,'qrscene_');
+            if(!empty($status)){
+               //带参数关注事件
+               Cache::put($status,$openId,20);
+               //回复文本消息
+               echo $msg="正在扫描登录，耐心等待";
+               $this->tools->responseText($msg,$xmlObj);
+            }
+      }
+      //判断用户关注过
+      if($xmlObj->MsgType=="event"&&$xmlObj->Event=="SCAN"){
+         //获取openid
+         $openId=(string)$xmlObj->FromUserName;
+         //获取二维码
+         $status=(string)$xmlObj->EventKey;
+         if(!empty($status)){
+            //带参数关注事件
+            Cache::put($status,$openId,20);
+            //回复文本消息
+            echo $status;
+            echo $msg="已关注扫描登录，耐心等待";
+            $this->tools->responseText($msg,$xmlObj);
+         }
+      }
+     
+   }
 
-    public function huifu()
-    {
-        $data = file_get_contents("php://input");
-        $xml = simplexml_load_string($data,'SimpleXMLElement', LIBXML_NOCDATA);        //将 xml字符串 转换成对象
-        $xml = (array)$xml; //转化成数组
-        //写入日志
-        $log_str = date('Y-m-d H:i:s') . "\n" . $data . "\n".'<<<<<<<';
-        file_put_contents(storage_path('logs/Receive_normal_messages.log'),$log_str,FILE_APPEND);
-        if($xml['MsgType']=='text'){
-            $preg_result = preg_match('/.*?油价/',$xml['Content']);
-//            dd($preg_result);
-            if($preg_result){
-                //查询油价
-                $city = substr($xml['Content'],0,-6);
-                $price_info = file_get_contents('http://www.wenjianliang.top/youjia/api');
-                $price_arr = json_decode($price_info,1);
-//                dd($price_arr);
-                $support_arr = [];
-                foreach($price_arr['result'] as $v){
-                    $support_arr[] = $v['city'];
-                }
-                if(!in_array($city,$support_arr)){
-                    $message = '查询城市不支持！';
-                    $xml_str = '<xml><ToUserName><![CDATA['.$xml['FromUserName'].']]></ToUserName><FromUserName><![CDATA['.$xml['ToUserName'].']]></FromUserName><CreateTime>'.time().'</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA['.$message.']]></Content></xml>';
-                    echo $xml_str;
-                    die();
-                }
-                foreach($price_arr['result'] as $v){
-                    if($city == $v['city']){
-                        $this->redis->incr($city);
-                        $find_num = $this->redis->get($city);
-                        //缓存操作
-                        if($find_num >1){
-                            if($this->redis->exists($city.'youjia')){
-                                //存在
-                                $v_info = $this->redis->get($city.'youjia');
-                                $v = json_decode($v_info,1);
-                            }else{
-                                $this->redis->set($city.'youjia',json_encode($v),300);
-                            }
-                        }
-                        //$message = $city.'目前油价：'."\n";
-                        $message = $city.'目前油价：'."\n".'92h：'.$v['92h']."\n".'95h：'.$v['95h']."\n".'98h：'.$v['98h']."\n".'0h：'.$v['0h'];
-                        $xml_str = '<xml><ToUserName><![CDATA['.$xml['FromUserName'].']]></ToUserName><FromUserName><![CDATA['.$xml['ToUserName'].']]></FromUserName><CreateTime>'.time().'</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA['.$message.']]></Content></xml>';
-                        echo $xml_str;
-                        die();
-                    }
-                }
-            }
-        }elseif($xml['MsgType']=='event'){
-            if($xml['Event']=='subscribe'){
-                $open_id=$xml['FromUserName'];
-                $user_info=$this->wechat->get_user_info($open_id);
-//                dd($user_info);
-                $user_name=$user_info['nickname'];
-                $us=DB::connection('mysql_shop')->table('user_wechat')->insert([
-                    'name'=>$user_name,
-                    'state'=>1,
-                    'register_time'=>time(),
-                    'password'=>''
-                ]);
-//                dd($open_id);
-//                $open_id=implode('',$open_id);
-                $huanying="欢迎";
-                $jiewei="进入选课系统";
-                $message = $huanying.$user_name.$jiewei;
-                $xml_str = '<xml><ToUserName><![CDATA['.$xml['FromUserName'].']]></ToUserName><FromUserName><![CDATA['.$xml['ToUserName'].']]></FromUserName><CreateTime>'.time().'</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA['.$message.']]></Content></xml>';
-                echo $xml_str;
-                //表白 -无故会出现故障 或者无反应
-            }elseif($xml['Event'] == 'CLICK'){
-                if($xml['EventKey'] == 'my_biaobai'){
-                    $open_id=$xml['FromUserName'];
-                    //此处的打印结果是openid 拿到openid 去查youjia 取出名字 放入条件
-//                    dd($open_id);
-                    $nickname_info=$this->wechat->get_user_info($open_id);
-//                    dd($nickname_info);
-                    $nickname_1=$nickname_info['nickname'];
-//                    dd($nickname_1);
-                    $biaobai_info = DB::connection('mysql_shop')->table('wechat_biaobai')->where(['user_name'=>$nickname_1])->get()->toArray();
-//                    dd($biaobai_info);
-                    $num=count($biaobai_info);
-//                    dd($num);
-                    $message = '';
-                    foreach($biaobai_info as $k=>$v){
-                        $message .= intval($k+1).'、'."《《收到》》".$v->push_user.'表白内容：'.$v->biaobai_content."\n";
-                    }
-                    $xml_str = '<xml><ToUserName><![CDATA['.$xml['FromUserName'].']]></ToUserName><FromUserName><![CDATA['.$xml['ToUserName'].']]></FromUserName><CreateTime>'.time().'</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA['."共收到".$num.'条'."\n".$message.']]></Content></xml>';
-                    echo $xml_str;
-                }elseif ($xml['EventKey'] == 'my_kecheng'){
-                    $user_name=session('kecheng_user_name');
-                    $panduan_kecheng=DB::connection('mysql_shop')->table('bayue_yuekao_kecheng')->where('user_name',$user_name)->get()->toarray();
-                        //已经有课程
-                        $open_id=$xml['FromUserName'];
-                        //此处的打印结果是openid 拿到openid 去查youjia 取出名字 放入条件
-//                    dd($open_id);
-                        $nickname_info=$this->wechat->get_user_info($open_id);
-//                    dd($nickname_info);
-                        $nickname_1=$nickname_info['nickname'];
-//                    dd($nickname_1);
-                        $kecheng_info = DB::connection('mysql_shop')->table('bayue_yuekao_kecheng')->where(['user_name'=>$nickname_1])->orderBy('kecheng_id','desc')->first();
-//                    dd($biaobai_info);
-                        $kecheng_info=json_decode(json_encode($kecheng_info),1);
-                        $tishi="你好,".$this->wechat->get_user_info($xml['FromUserName'])['nickname']."同学，你当前的课程安排如下";
-//                    dd($kecheng_info);
-//                    $message = '';
-                        $message ="第一节".$kecheng_info['kecheng_1']."\n"."第二节".$kecheng_info['kecheng_2']."\n"."第三节".$kecheng_info['kecheng_3']."\n"."第四节".$kecheng_info['kecheng_4']."\n";
-                        $xml_str = '<xml><ToUserName><![CDATA['.$xml['FromUserName'].']]></ToUserName><FromUserName><![CDATA['.$xml['ToUserName'].']]></FromUserName><CreateTime>'.time().'</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA['.$tishi."\n".$message.']]></Content></xml>';
-//                    $xml_str = '<xml><ToUserName><![CDATA['.$xml['FromUserName'].']]></ToUserName><FromUserName><![CDATA['.$xml['ToUserName'].']]></FromUserName><CreateTime>'.time().'</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA['.$message.']]></Content></xml>';
-//                    dump($xml_str);
-                        echo $xml_str;
-                }
-                //老师的地理位置 看不懂
-            }elseif($xml['Event'] == 'location_select') {
-                $message = $xml['SendLocationInfo']->Label;
-                \Log::Info($message);
-                $xml_str = '<xml><ToUserName><![CDATA[otAUQ1UtX-nKATwQMq5euKLME2fg]]></ToUserName><FromUserName><![CDATA[' . $xml['ToUserName'] . ']]></FromUserName><CreateTime>' . time() . '</CreateTime><MsgType><![CDATA[text]]></MsgType><Content><![CDATA[' . $message . ']]></Content></xml>';
-                echo $xml_str;
-            }
-        }
-    }
+
+   public function checkWechatLogin(){
+      $name=request()->name;
+      $openId=Cache::get($name);
+      // dd($openId);
+      if(!$openId){
+          return json_encode(['font'=>'用户未登录','msg'=>2]);
+      }
+      return json_encode(['font'=>'用户已扫描','msg'=>1]);
+   }
 }
